@@ -47,6 +47,37 @@
       </div>
 
       <div class="tool-section">
+        <h3>画笔颜色</h3>
+        <div class="color-picker">
+          <!-- 当前颜色显示和自定义颜色选择器 -->
+          <label class="color-picker-label">
+            <div
+              class="current-color"
+              :style="{ backgroundColor: currentColor }"
+            ></div>
+            <input
+              type="color"
+              v-model="currentColor"
+              class="custom-color-input"
+              @change="setColor(currentColor)"
+            />
+          </label>
+
+          <!-- 颜色预设 -->
+          <div class="color-presets">
+            <div
+              v-for="(color, index) in colorPresets"
+              :key="index"
+              class="color-preset"
+              :style="{ backgroundColor: color }"
+              :class="{ active: currentColor === color }"
+              @click="setColor(color)"
+            ></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tool-section">
         <h3>橡皮擦设置</h3>
         <div class="size-control">
           <label>橡皮擦大小: </label>
@@ -110,6 +141,7 @@ interface DrawStep {
   type: "pen" | "eraser";
   points: { x: number; y: number }[];
   size: number;
+  color?: string; // 添加颜色属性
 }
 
 @Component
@@ -153,6 +185,19 @@ export default class WhiteBoard extends Vue {
   // 添加音频相关属性
   private audioStream: MediaStream | null = null;
   private combinedStream: MediaStream | null = null;
+
+  // 添加画笔颜色相关属性
+  private currentColor = "#000000";
+  private colorPresets = [
+    "#000000", // 黑色
+    "#FF0000", // 红色
+    "#00FF00", // 绿色
+    "#0000FF", // 蓝色
+    "#FF9900", // 橙色
+    "#FF00FF", // 粉色
+    "#00FFFF", // 青色
+    "#9933FF", // 紫色
+  ];
 
   get formattedRecordingTime(): string {
     const totalSeconds = this.recordingTime;
@@ -428,6 +473,7 @@ export default class WhiteBoard extends Vue {
       type: this.currentTool,
       points: [point],
       size: this.currentTool === "pen" ? this.penSize : this.eraserSize,
+      color: this.currentTool === "pen" ? this.currentColor : undefined,
     };
 
     // 清除重做栈
@@ -501,7 +547,7 @@ export default class WhiteBoard extends Vue {
 
       if (this.currentStep.type === "pen") {
         this.drawingCtx.globalCompositeOperation = "source-over";
-        this.drawingCtx.strokeStyle = "#000";
+        this.drawingCtx.strokeStyle = this.currentStep.color || "#000";
         this.drawingCtx.lineWidth = this.currentStep.size;
       } else {
         // 橡皮擦模式
@@ -622,7 +668,7 @@ export default class WhiteBoard extends Vue {
 
       if (step.type === "pen") {
         this.drawingCtx.globalCompositeOperation = "source-over";
-        this.drawingCtx.strokeStyle = "#000";
+        this.drawingCtx.strokeStyle = step.color || "#000";
         this.drawingCtx.lineWidth = step.size;
       } else {
         // 橡皮擦模式
@@ -638,6 +684,15 @@ export default class WhiteBoard extends Vue {
 
     // 更新主画布显示
     this.redrawCanvas();
+  }
+
+  // 添加选择颜色的方法
+  private setColor(color: string) {
+    this.currentColor = color;
+    // 自动切换到画笔工具
+    if (this.currentTool === "eraser") {
+      this.setTool("pen");
+    }
   }
 
   // 操作方法
@@ -698,10 +753,10 @@ export default class WhiteBoard extends Vue {
       // 1. 获取麦克风权限
       const audioStream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          echoCancellation: true,  // 开启回声消除
-          noiseSuppression: true,  // 开启降噪
-          sampleRate: 44100        // 设置采样率
-        }
+          echoCancellation: true, // 开启回声消除
+          noiseSuppression: true, // 开启降噪
+          sampleRate: 44100, // 设置采样率
+        },
       });
 
       // 保存音频流的引用，用于之后释放
@@ -713,7 +768,7 @@ export default class WhiteBoard extends Vue {
       // 3. 合并音视频流
       const combinedTracks = [
         ...canvasStream.getVideoTracks(),
-        ...audioStream.getAudioTracks()
+        ...audioStream.getAudioTracks(),
       ];
       this.combinedStream = new MediaStream(combinedTracks);
 
@@ -762,7 +817,7 @@ export default class WhiteBoard extends Vue {
       if (container) {
         container.classList.remove("recording");
       }
-      if ((err as Error).name === 'NotAllowedError') {
+      if ((err as Error).name === "NotAllowedError") {
         alert("无法访问麦克风，请确保已授予麦克风权限。");
       } else {
         alert("无法开始录制，请确保浏览器支持画布和音频录制功能。");
@@ -774,7 +829,7 @@ export default class WhiteBoard extends Vue {
   private cleanupStreams() {
     // 停止所有音频轨道
     if (this.audioStream) {
-      this.audioStream.getTracks().forEach(track => {
+      this.audioStream.getTracks().forEach((track) => {
         track.stop();
       });
       this.audioStream = null;
@@ -782,13 +837,12 @@ export default class WhiteBoard extends Vue {
 
     // 停止合并的流
     if (this.combinedStream) {
-      this.combinedStream.getTracks().forEach(track => {
+      this.combinedStream.getTracks().forEach((track) => {
         track.stop();
       });
       this.combinedStream = null;
     }
   }
-
 
   pauseRecording() {
     if (this.mediaRecorder && this.mediaRecorder.state === "recording") {
@@ -1081,5 +1135,67 @@ button:disabled {
   pointer-events: none;
   overflow: hidden;
   z-index: 0; /* 确保在最底层 */
+}
+.color-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+}
+
+.color-picker-label {
+  position: relative;
+  display: inline-block;
+  cursor: pointer;
+}
+
+.current-color {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  border: 2px solid #eee;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.current-color:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+}
+
+.custom-color-input {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.color-presets {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.color-preset {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 2px solid transparent;
+}
+
+.color-preset:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.color-preset.active {
+  border-color: #4a90e2;
+  transform: scale(1.1);
 }
 </style>
