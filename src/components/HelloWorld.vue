@@ -46,9 +46,7 @@ export default class HelloWorld extends Vue {
     <div>hello world</div>
     <div>hello world</div>
     <p>hello world</p>
-    <img src="https://www.baidu.com/img/flexible/logo/pc/result.png" />
     <div>hello world</div>
-    <img src="https://www.jd.com/favicon.ico" />
   </div>
   `
 

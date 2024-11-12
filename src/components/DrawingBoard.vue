@@ -150,6 +150,10 @@ export default class WhiteBoard extends Vue {
   // isMouseDown
   private isMouseDown = false;
 
+  // 添加音频相关属性
+  private audioStream: MediaStream | null = null;
+  private combinedStream: MediaStream | null = null;
+
   get formattedRecordingTime(): string {
     const totalSeconds = this.recordingTime;
     const minutes = Math.floor(totalSeconds / 60);
@@ -195,6 +199,9 @@ export default class WhiteBoard extends Vue {
     if (canvasContainer) {
       this.resizeObserver.observe(canvasContainer);
     }
+
+    // 添加平滑过渡样式
+    this.updateStyle();
   }
 
   // 2. 添加新的鼠标事件处理方法
@@ -214,6 +221,9 @@ export default class WhiteBoard extends Vue {
     const contentLayer = this.$refs.contentLayer as HTMLElement;
     if (!contentLayer) return;
 
+    console.log("HTML content rendered:", contentLayer.innerHTML);
+    console.log("Background canvas created:", this.backgroundCanvas);
+
     // 确保内容层可见并且有内容
     contentLayer.style.visibility = "visible";
     contentLayer.style.opacity = "1";
@@ -226,7 +236,7 @@ export default class WhiteBoard extends Vue {
       const htmlCanvas = await html2canvas(contentLayer, {
         backgroundColor: null,
         scale: window.devicePixelRatio || 1,
-        useCORS: true,
+        useCORS: false,
         allowTaint: true,
         imageTimeout: 0,
         logging: false,
@@ -246,6 +256,11 @@ export default class WhiteBoard extends Vue {
       });
 
       this.backgroundCanvas = htmlCanvas;
+
+      console.log(
+        "Background canvas created1111111111:",
+        this.backgroundCanvas
+      );
 
       // 将背景绘制到主画布
       this.redrawCanvas();
@@ -284,16 +299,17 @@ export default class WhiteBoard extends Vue {
     if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") {
       this.mediaRecorder.stop();
     }
+    this.cleanupStreams();
   }
 
   private async initCanvas() {
     // 初始化主画布（用于显示）
     this.canvas = this.$refs.canvas as HTMLCanvasElement;
-    this.ctx = this.canvas.getContext("2d");
+    this.ctx = this.canvas.getContext("2d", { alpha: false });
 
     // [新增] 初始化绘制画布
     this.drawingCanvas = document.createElement("canvas");
-    this.drawingCtx = this.drawingCanvas.getContext("2d");
+    this.drawingCtx = this.drawingCanvas.getContext("2d", { alpha: true });
 
     const container = this.$refs.canvasContainer as HTMLElement;
     const { width, height } = container.getBoundingClientRect();
@@ -304,8 +320,22 @@ export default class WhiteBoard extends Vue {
     this.drawingCanvas.width = width;
     this.drawingCanvas.height = height;
 
+    // 设置白色背景
+    if (this.ctx) {
+      this.ctx.fillStyle = "#fff";
+      this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+
     // 设置默认样式
     if (this.drawingCtx) {
+      // 设置白色背景
+      this.drawingCtx.fillRect(
+        0,
+        0,
+        this.drawingCanvas.width,
+        this.drawingCanvas.height
+      );
+
       this.drawingCtx.lineCap = "round";
       this.drawingCtx.lineJoin = "round";
     }
@@ -354,14 +384,15 @@ export default class WhiteBoard extends Vue {
     this.drawingCanvas.width = width;
     this.drawingCanvas.height = height;
 
+    if (this.ctx) {
+      this.ctx.fillStyle = "#fff";
+      this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+
     // 重新设置样式（因为改变画布大小会重置上下文）
     if (this.drawingCtx) {
       this.drawingCtx.lineCap = "round";
       this.drawingCtx.lineJoin = "round";
-    }
-    if (this.ctx) {
-      this.ctx.lineCap = "round";
-      this.ctx.lineJoin = "round";
     }
 
     // 重新初始化背景画布
@@ -380,7 +411,7 @@ export default class WhiteBoard extends Vue {
         x: e.clientX - rect.left,
         y: e.clientY - rect.top,
       };
-      
+
       // 触发重绘，这样会同时更新主画布和录制画布
       if (this.isDrawing) {
         this.redrawCanvas();
@@ -417,21 +448,26 @@ export default class WhiteBoard extends Vue {
 
   // 修改 drawEraserIndicator 方法
   // 修改绘制橡皮擦指示器的方法
-  private drawEraserIndicator(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
-    console.log('drawEraserIndicator');
-    
+  private drawEraserIndicator(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    size: number
+  ) {
+    console.log("drawEraserIndicator");
+
     ctx.save();
 
     // 绘制外圈（半透明填充）
     ctx.beginPath();
     ctx.arc(x, y, size / 2, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
     ctx.fill();
 
     // 绘制边框
     ctx.beginPath();
     ctx.arc(x, y, size / 2, 0, Math.PI * 2);
-    ctx.strokeStyle = '#666';
+    ctx.strokeStyle = "#666";
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
@@ -442,7 +478,7 @@ export default class WhiteBoard extends Vue {
     ctx.lineTo(x + crossSize, y);
     ctx.moveTo(x, y - crossSize);
     ctx.lineTo(x, y + crossSize);
-    ctx.strokeStyle = '#666';
+    ctx.strokeStyle = "#666";
     ctx.lineWidth = 1;
     ctx.stroke();
 
@@ -464,16 +500,16 @@ export default class WhiteBoard extends Vue {
       this.drawingCtx.lineTo(lastTwoPoints[1].x, lastTwoPoints[1].y);
 
       if (this.currentStep.type === "pen") {
+        this.drawingCtx.globalCompositeOperation = "source-over";
         this.drawingCtx.strokeStyle = "#000";
         this.drawingCtx.lineWidth = this.currentStep.size;
-        this.drawingCtx.stroke();
       } else {
-        this.drawingCtx.strokeStyle = "#fff";
-        this.drawingCtx.lineWidth = this.currentStep.size;
+        // 橡皮擦模式
         this.drawingCtx.globalCompositeOperation = "destination-out";
-        this.drawingCtx.stroke();
-        this.drawingCtx.globalCompositeOperation = "source-over";
+        this.drawingCtx.strokeStyle = "rgba(0,0,0,1)"; // 使用不透明的颜色来擦除
+        this.drawingCtx.lineWidth = this.currentStep.size;
       }
+      this.drawingCtx.stroke();
     }
 
     // 更新主画布显示
@@ -517,7 +553,9 @@ export default class WhiteBoard extends Vue {
     if (!this.ctx || !this.canvas || !this.drawingCanvas) return;
 
     // 清空主画布
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    // 清空并重绘白色背景
+    this.ctx.fillStyle = "#ffffff";
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
     // 1. 先绘制背景（HTML内容）
     if (this.backgroundCanvas) {
@@ -531,10 +569,13 @@ export default class WhiteBoard extends Vue {
     }
 
     // 2. 再绘制用户绘制的内容
+    // 3. 绘制用户的绘制内容
+    // this.ctx.globalCompositeOperation = 'source-over';
     this.ctx.drawImage(this.drawingCanvas, 0, 0);
 
     // 3. 最后绘制橡皮擦指示器
     if (this.currentTool === "eraser" && this.isMouseDown) {
+      this.ctx.globalCompositeOperation = "source-over";
       this.drawEraserIndicator(
         this.ctx,
         this.cursorPosition.x,
@@ -545,7 +586,12 @@ export default class WhiteBoard extends Vue {
 
     // 4. 如果正在录制，将当前画面同步到录制画布
     if (this.isRecording && this.recordingCtx && this.recordingCanvas) {
-      this.recordingCtx.clearRect(0, 0, this.recordingCanvas.width, this.recordingCanvas.height);
+      this.recordingCtx.clearRect(
+        0,
+        0,
+        this.recordingCanvas.width,
+        this.recordingCanvas.height
+      );
       this.recordingCtx.drawImage(this.canvas, 0, 0);
     }
   }
@@ -555,7 +601,7 @@ export default class WhiteBoard extends Vue {
   private redrawDrawingCanvas() {
     if (!this.drawingCanvas || !this.drawingCtx) return;
 
-    // 清空绘制画布
+    // 清空
     this.drawingCtx.clearRect(
       0,
       0,
@@ -575,17 +621,20 @@ export default class WhiteBoard extends Vue {
       }
 
       if (step.type === "pen") {
+        this.drawingCtx.globalCompositeOperation = "source-over";
         this.drawingCtx.strokeStyle = "#000";
         this.drawingCtx.lineWidth = step.size;
-        this.drawingCtx.stroke();
       } else {
-        this.drawingCtx.strokeStyle = "#fff";
-        this.drawingCtx.lineWidth = step.size;
+        // 橡皮擦模式
         this.drawingCtx.globalCompositeOperation = "destination-out";
-        this.drawingCtx.stroke();
-        this.drawingCtx.globalCompositeOperation = "source-over";
+        this.drawingCtx.strokeStyle = "rgba(0,0,0,1)"; // 使用不透明的颜色来擦除
+        this.drawingCtx.lineWidth = step.size;
       }
+      this.drawingCtx.stroke();
     });
+
+    // 重置合成模式
+    this.drawingCtx.globalCompositeOperation = "source-over";
 
     // 更新主画布显示
     this.redrawCanvas();
@@ -623,6 +672,7 @@ export default class WhiteBoard extends Vue {
 
     this.drawHistory = [];
     this.redoStack = [];
+    // 清空时重设白色背景
     this.drawingCtx.clearRect(
       0,
       0,
@@ -641,35 +691,104 @@ export default class WhiteBoard extends Vue {
     return this.redoStack.length > 0;
   }
 
-  startRecording() {
+  async startRecording() {
     if (!this.canvas) return;
 
     try {
-      // 创建录制用的canvas
-      this.recordingCanvas = document.createElement("canvas");
-      this.recordingCanvas.width = this.canvas.width;
-      this.recordingCanvas.height = this.canvas.height;
-      this.recordingCtx = this.recordingCanvas.getContext("2d");
-
-      if (!this.recordingCtx) {
-        throw new Error("无法创建录制上下文");
-      }
-
-      // 初始化录制画布，复制当前画布内容
-      this.recordingCtx.drawImage(this.canvas, 0, 0);
-
-      // 创建 MediaRecorder
-      const stream = this.recordingCanvas.captureStream(30);
-      this.mediaRecorder = new MediaRecorder(stream, {
-        mimeType: "video/webm;codecs=vp8",
+      // 1. 获取麦克风权限
+      const audioStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,  // 开启回声消除
+          noiseSuppression: true,  // 开启降噪
+          sampleRate: 44100        // 设置采样率
+        }
       });
 
-      // ... 其他录制相关代码保持不变 ...
+      // 保存音频流的引用，用于之后释放
+      this.audioStream = audioStream;
+
+      // 创建 MediaRecorder
+      const canvasStream = this.canvas.captureStream(30);
+
+      // 3. 合并音视频流
+      const combinedTracks = [
+        ...canvasStream.getVideoTracks(),
+        ...audioStream.getAudioTracks()
+      ];
+      this.combinedStream = new MediaStream(combinedTracks);
+
+      this.mediaRecorder = new MediaRecorder(this.combinedStream, {
+        mimeType: "video/mp4",
+      });
+
+      // 设置数据处理事件
+      this.mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          this.recordedChunks.push(event.data);
+        }
+      };
+
+      // 设置录制结束事件
+      this.mediaRecorder.onstop = () => {
+        this.finishRecording();
+      };
+
+      // 开始录制
+      this.recordedChunks = [];
+      this.recordingStartTime = Date.now();
+      this.recordingTime = 0;
+
+      this.isPaused = false;
+      this.isRecording = true;
+      // 启动录制计时器
+      this.startRecordingTimer();
+      // 添加录制状态类 - 使用 Vue 的 nextTick 确保 DOM 更新
+      await this.$nextTick();
+      // 添加录制状态类
+      const container = this.$refs.canvasContainer as HTMLElement;
+      if (container) {
+        container.classList.add("recording");
+      }
+      // 最后才开始录制，避免错过初始帧
+      this.mediaRecorder.start(100);
     } catch (err) {
-      console.error("录制失败:", err);
-      alert("无法开始录制，请确保浏览器支持画布录制功能。");
+      console.error("录制初始化失败:", err);
+      // 重置所有状态
+      this.isRecording = false;
+      this.mediaRecorder = null;
+      this.recordedChunks = [];
+      // 移除录制状态类
+      const container = this.$refs.canvasContainer as HTMLElement;
+      if (container) {
+        container.classList.remove("recording");
+      }
+      if ((err as Error).name === 'NotAllowedError') {
+        alert("无法访问麦克风，请确保已授予麦克风权限。");
+      } else {
+        alert("无法开始录制，请确保浏览器支持画布和音频录制功能。");
+      }
+      // alert("无法开始录制，请确保浏览器支持画布录制功能。");
     }
   }
+
+  private cleanupStreams() {
+    // 停止所有音频轨道
+    if (this.audioStream) {
+      this.audioStream.getTracks().forEach(track => {
+        track.stop();
+      });
+      this.audioStream = null;
+    }
+
+    // 停止合并的流
+    if (this.combinedStream) {
+      this.combinedStream.getTracks().forEach(track => {
+        track.stop();
+      });
+      this.combinedStream = null;
+    }
+  }
+
 
   pauseRecording() {
     if (this.mediaRecorder && this.mediaRecorder.state === "recording") {
@@ -699,6 +818,7 @@ export default class WhiteBoard extends Vue {
   stopRecording() {
     if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") {
       this.mediaRecorder.stop();
+      this.cleanupStreams();
     }
   }
 
@@ -715,9 +835,20 @@ export default class WhiteBoard extends Vue {
   }
 
   private async finishRecording() {
+    if (this.recordedChunks.length === 0) {
+      console.error("No recorded data available");
+      return;
+    }
     try {
+      // 移除录制状态类
+      const container = this.$refs.canvasContainer as HTMLElement;
+      if (container) {
+        container.classList.remove("recording");
+      }
+      // 等待过渡效果完成
+      await this.$nextTick();
       const blob = new Blob(this.recordedChunks, {
-        type: "video/webm",
+        type: "video/mp4",
       });
 
       // 创建下载链接
@@ -726,12 +857,16 @@ export default class WhiteBoard extends Vue {
       document.body.appendChild(a);
       a.style.display = "none";
       a.href = url;
-      a.download = `whiteboard-recording-${new Date().toISOString()}.webm`;
+      a.download = `whiteboard-recording-${new Date().toISOString()}.mp4`;
+      // 触发下载
+      await this.$nextTick();
       a.click();
 
       // 清理资源
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 100);
 
       // 重置状态
       this.isRecording = false;
@@ -751,10 +886,28 @@ export default class WhiteBoard extends Vue {
     }
   }
 
+  // 添加 CSS 过渡效果，减少视觉闪烁
+  private updateStyle() {
+    const style = document.createElement("style");
+    style.textContent = `
+    .canvas-container {
+      transition: all 0.2s ease-out;
+    }
+    .canvas-container::after {
+      transition: all 0.2s ease-out;
+      opacity: 0;
+    }
+    .recording .canvas-container::after {
+      opacity: 1;
+    }
+  `;
+    document.head.appendChild(style);
+  }
+
   private downloadRecording() {
     try {
       const blob = new Blob(this.recordedChunks, {
-        type: "video/webm",
+        type: "video/mp4",
       });
 
       const url = URL.createObjectURL(blob);
@@ -762,7 +915,7 @@ export default class WhiteBoard extends Vue {
       document.body.appendChild(a);
       a.style.display = "none";
       a.href = url;
-      a.download = `whiteboard-recording-${new Date().toISOString()}.webm`;
+      a.download = `whiteboard-recording-${new Date().toISOString()}.mp4`;
       a.click();
 
       // 清理资源
