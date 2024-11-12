@@ -3,36 +3,21 @@
     <!-- 画布和内容区域 -->
     <div class="canvas-container" ref="canvasContainer">
       <!-- HTML内容层 -->
-      <div
-        class="content-layer"
-        ref="contentLayer"
-        v-html="initialContent"
-      ></div>
+      <div class="content-layer" ref="contentLayer" v-html="initialContent"></div>
 
       <!-- 画布层 -->
-      <canvas
-        ref="canvas"
-        @mousedown="startDrawing"
-        @mousemove="draw"
-        @mouseup="stopDrawing"
-        @mouseleave="stopDrawing"
-      ></canvas>
+      <canvas ref="canvas" @mousedown="startDrawing" @mousemove="draw" @mouseup="stopDrawing"
+        @mouseleave="stopDrawing"></canvas>
     </div>
 
     <!-- 右侧工具栏 -->
     <div class="toolbar">
       <div class="tool-section">
         <h3>工具</h3>
-        <button
-          @click="setTool('pen')"
-          :class="{ active: currentTool === 'pen' }"
-        >
+        <button @click="setTool('pen')" :class="{ active: currentTool === 'pen' }">
           画笔
         </button>
-        <button
-          @click="setTool('eraser')"
-          :class="{ active: currentTool === 'eraser' }"
-        >
+        <button @click="setTool('eraser')" :class="{ active: currentTool === 'eraser' }">
           橡皮擦
         </button>
       </div>
@@ -51,28 +36,15 @@
         <div class="color-picker">
           <!-- 当前颜色显示和自定义颜色选择器 -->
           <label class="color-picker-label">
-            <div
-              class="current-color"
-              :style="{ backgroundColor: currentColor }"
-            ></div>
-            <input
-              type="color"
-              v-model="currentColor"
-              class="custom-color-input"
-              @change="setColor(currentColor)"
-            />
+            <div class="current-color" :style="{ backgroundColor: currentColor }"></div>
+            <input type="color" v-model="currentColor" class="custom-color-input" @change="setColor(currentColor)" />
           </label>
 
           <!-- 颜色预设 -->
           <div class="color-presets">
-            <div
-              v-for="(color, index) in colorPresets"
-              :key="index"
-              class="color-preset"
-              :style="{ backgroundColor: color }"
-              :class="{ active: currentColor === color }"
-              @click="setColor(color)"
-            ></div>
+            <div v-for="(color, index) in colorPresets" :key="index" class="color-preset"
+              :style="{ backgroundColor: color }" :class="{ active: currentColor === color }" @click="setColor(color)">
+            </div>
           </div>
         </div>
       </div>
@@ -90,29 +62,18 @@
         <h3>录制</h3>
         <div class="recording-controls">
           <!-- 未录制状态 -->
-          <button
-            v-if="!isRecording"
-            @click="startRecording"
-            class="record-btn"
-          >
+          <button v-if="!isRecording" @click="startRecording" class="record-btn">
             开始录制
           </button>
 
           <!-- 录制中状态 -->
           <div v-if="isRecording" class="recording-status">
-            <span
-              class="recording-indicator"
-              :class="{ paused: isPaused }"
-            ></span>
+            <span class="recording-indicator" :class="{ paused: isPaused }"></span>
             <span class="recording-label">{{ recordingStatus }}</span>
             <span class="recording-time">{{ formattedRecordingTime }}</span>
             <div class="recording-buttons">
               <!-- 暂停/继续按钮 -->
-              <button
-                v-if="!isPaused"
-                @click="pauseRecording"
-                class="pause-btn"
-              >
+              <button v-if="!isPaused" @click="pauseRecording" class="pause-btn">
                 暂停
               </button>
               <button v-else @click="resumeRecording" class="resume-btn">
@@ -285,7 +246,12 @@ export default class WhiteBoard extends Vue {
         allowTaint: true,
         imageTimeout: 0,
         logging: false,
-        onclone: (documentClone) => {
+        x: 0, // 设置水平位置为0
+        y: 0, // 设置垂直位置为0
+        // 设置宽度和高度以匹配内容大小
+        width: contentLayer.offsetWidth,
+        height: contentLayer.offsetHeight,
+        onclone: (documentClone: any) => {
           // 在克隆的文档中处理图片
           const images = documentClone.getElementsByTagName("img");
           for (let img of images) {
@@ -1028,19 +994,23 @@ export default class WhiteBoard extends Vue {
   margin: 20px;
   border-radius: 8px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
-  overflow: hidden; /* 确保内容不会溢出容器 */
+  overflow: hidden;
+  /* 确保内容不会溢出容器 */
 }
 
 /* 更新橡皮擦指示器样式 */
 .eraser-indicator {
-  position: absolute; /* 改为absolute定位 */
+  position: absolute;
+  /* 改为absolute定位 */
   border: 2px solid #666;
   background: rgba(255, 255, 255, 0.3);
   border-radius: 50%;
   pointer-events: none;
   transform: translate(-50%, -50%);
-  z-index: 1000; /* 确保在最上层 */
-  mix-blend-mode: difference; /* 使指示器在不同背景色上都清晰可见 */
+  z-index: 1000;
+  /* 确保在最上层 */
+  mix-blend-mode: difference;
+  /* 使指示器在不同背景色上都清晰可见 */
 }
 
 .toolbar {
@@ -1063,7 +1033,8 @@ export default class WhiteBoard extends Vue {
   height: 100%;
   display: flex;
   overflow: hidden;
-  background: #f9f9f9; /* 添加容器背景色 */
+  background: #f9f9f9;
+  /* 添加容器背景色 */
 }
 
 canvas {
@@ -1074,7 +1045,8 @@ canvas {
   height: 100%;
   cursor: crosshair;
   touch-action: none;
-  border-radius: 8px; /* 与容器圆角保持一致 */
+  border-radius: 8px;
+  /* 与容器圆角保持一致 */
   z-index: 1;
 }
 
@@ -1134,8 +1106,10 @@ button:disabled {
   height: 100%;
   pointer-events: none;
   overflow: hidden;
-  z-index: 0; /* 确保在最底层 */
+  z-index: 0;
+  /* 确保在最底层 */
 }
+
 .color-picker {
   display: flex;
   flex-direction: column;
@@ -1155,12 +1129,12 @@ button:disabled {
   border-radius: 8px;
   border: 2px solid #eee;
   transition: all 0.2s ease;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .current-color:hover {
   transform: scale(1.05);
-  box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
 }
 
 .custom-color-input {
@@ -1191,11 +1165,27 @@ button:disabled {
 
 .color-preset:hover {
   transform: scale(1.1);
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .color-preset.active {
   border-color: #4a90e2;
   transform: scale(1.1);
+}
+
+.content-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 20px 20px 20px 20px;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+  /* 添加以下样式以确保内容从左上角开始 */
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
 }
 </style>
