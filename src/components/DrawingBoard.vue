@@ -1,4 +1,3 @@
-// WhiteBoard.vue
 <template>
   <div class="whiteboard-container">
     <!-- 画布和内容区域 -->
@@ -59,26 +58,46 @@
       <div class="tool-section">
         <h3>录制</h3>
         <div class="recording-controls">
+          <!-- 未录制状态 -->
           <button
-            @click="startRecording"
             v-if="!isRecording"
+            @click="startRecording"
             class="record-btn"
           >
             开始录制
           </button>
+
+          <!-- 录制中状态 -->
           <div v-if="isRecording" class="recording-status">
-            <span class="recording-indicator"></span>
+            <span
+              class="recording-indicator"
+              :class="{ paused: isPaused }"
+            ></span>
+            <span class="recording-label">{{ recordingStatus }}</span>
             <span class="recording-time">{{ formattedRecordingTime }}</span>
-            <button @click="stopRecording" class="stop-btn">停止录制</button>
+            <div class="recording-buttons">
+              <!-- 暂停/继续按钮 -->
+              <button
+                v-if="!isPaused"
+                @click="pauseRecording"
+                class="pause-btn"
+              >
+                暂停
+              </button>
+              <button v-else @click="resumeRecording" class="resume-btn">
+                继续
+              </button>
+              <!-- 停止按钮 -->
+              <button @click="stopRecording" class="stop-btn">结束录制</button>
+            </div>
           </div>
         </div>
-      </div>
-
-      <div class="tool-section">
-        <h3>操作</h3>
-        <button @click="undo" :disabled="!canUndo">撤销</button>
-        <button @click="redo" :disabled="!canRedo">重做</button>
-        <button @click="clear">清空</button>
+        <div class="tool-section">
+          <h3>操作</h3>
+          <button @click="undo" :disabled="!canUndo">撤销</button>
+          <button @click="redo" :disabled="!canRedo">重做</button>
+          <button @click="clear">清空</button>
+        </div>
       </div>
     </div>
   </div>
@@ -113,7 +132,6 @@ export default class WhiteBoard extends Vue {
   private cursorPosition = { x: 0, y: 0 };
   private resizeObserver: ResizeObserver | null = null;
 
-
   private recordingStartTime = 0;
   private recordingTimer: number | null = null;
   private recordingTime = 0;
@@ -122,19 +140,29 @@ export default class WhiteBoard extends Vue {
   private recordingCtx: CanvasRenderingContext2D | null = null;
   private backgroundCanvas: HTMLCanvasElement | null = null;
 
+  private isPaused = false;
+  private pausedTime = 0; // 记录暂停时的时间
+
   get formattedRecordingTime(): string {
-    const minutes = Math.floor(this.recordingTime / 60);
-    const seconds = this.recordingTime % 60;
+    const totalSeconds = this.recordingTime;
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
     return `${minutes.toString().padStart(2, "0")}:${seconds
       .toString()
       .padStart(2, "0")}`;
+  }
+
+  get recordingStatus(): string {
+    if (this.isPaused) return "已暂停";
+    if (this.isRecording) return "录制中";
+    return "准备录制";
   }
 
   async mounted() {
     this.initCanvas();
     window.addEventListener("mousemove", this.updateCursorPosition);
 
-     // 初始化背景画布
+    // 初始化背景画布
     await this.initBackgroundCanvas();
 
     // 监听容器大小变化
@@ -162,7 +190,7 @@ export default class WhiteBoard extends Vue {
       this.backgroundCanvas = htmlCanvas;
       this.redrawCanvas(); // 重绘以显示背景
     } catch (error) {
-      console.error('Failed to convert HTML to canvas:', error);
+      console.error("Failed to convert HTML to canvas:", error);
     }
   }
 
@@ -193,7 +221,8 @@ export default class WhiteBoard extends Vue {
   }
 
   private drawCurrentStep() {
-    if (!this.ctx || !this.currentStep || this.currentStep.points.length < 2) return;
+    if (!this.ctx || !this.currentStep || this.currentStep.points.length < 2)
+      return;
 
     const points = this.currentStep.points;
     const lastTwoPoints = points.slice(-2);
@@ -202,20 +231,20 @@ export default class WhiteBoard extends Vue {
     this.ctx.moveTo(lastTwoPoints[0].x, lastTwoPoints[0].y);
     this.ctx.lineTo(lastTwoPoints[1].x, lastTwoPoints[1].y);
 
-    if (this.currentStep.type === 'pen') {
-      this.ctx.strokeStyle = '#000';
+    if (this.currentStep.type === "pen") {
+      this.ctx.strokeStyle = "#000";
       this.ctx.lineWidth = this.currentStep.size;
-      this.ctx.lineCap = 'round';
-      this.ctx.lineJoin = 'round';
+      this.ctx.lineCap = "round";
+      this.ctx.lineJoin = "round";
       this.ctx.stroke();
     } else {
-      this.ctx.strokeStyle = '#fff';
+      this.ctx.strokeStyle = "#fff";
       this.ctx.lineWidth = this.currentStep.size;
-      this.ctx.lineCap = 'round';
-      this.ctx.lineJoin = 'round';
-      this.ctx.globalCompositeOperation = 'destination-out';
+      this.ctx.lineCap = "round";
+      this.ctx.lineJoin = "round";
+      this.ctx.globalCompositeOperation = "destination-out";
       this.ctx.stroke();
-      this.ctx.globalCompositeOperation = 'source-over';
+      this.ctx.globalCompositeOperation = "source-over";
     }
   }
 
@@ -229,7 +258,7 @@ export default class WhiteBoard extends Vue {
     this.canvas.width = width;
     this.canvas.height = height;
 
-     // 重新初始化背景画布
+    // 重新初始化背景画布
     await this.initBackgroundCanvas();
 
     // 重新绘制历史记录
@@ -241,16 +270,21 @@ export default class WhiteBoard extends Vue {
     if (rect) {
       this.cursorPosition = {
         x: e.clientX - rect.left,
-        y: e.clientY - rect.top
+        y: e.clientY - rect.top,
       };
       this.isMouseOnCanvas = e.target === this.canvas;
-      
+
       // 重绘画布以更新指示器位置
       this.redrawCanvas();
-      
+
       // 如果鼠标在画布上且当前工具是橡皮擦，绘制指示器
-      if (this.isMouseOnCanvas && this.currentTool === 'eraser' && this.ctx) {
-        this.drawEraserIndicator(this.ctx, this.cursorPosition.x, this.cursorPosition.y, this.eraserSize);
+      if (this.isMouseOnCanvas && this.currentTool === "eraser" && this.ctx) {
+        this.drawEraserIndicator(
+          this.ctx,
+          this.cursorPosition.x,
+          this.cursorPosition.y,
+          this.eraserSize
+        );
       }
     }
   }
@@ -258,11 +292,11 @@ export default class WhiteBoard extends Vue {
   private startDrawing(e: MouseEvent) {
     this.isDrawing = true;
     const point = this.getCanvasPoint(e);
-    
+
     this.currentStep = {
       type: this.currentTool,
       points: [point],
-      size: this.currentTool === 'pen' ? this.penSize : this.eraserSize
+      size: this.currentTool === "pen" ? this.penSize : this.eraserSize,
     };
 
     // 清除重做栈
@@ -280,36 +314,41 @@ export default class WhiteBoard extends Vue {
     this.redrawCanvas();
   }
 
-  private drawEraserIndicator(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+  private drawEraserIndicator(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    size: number
+  ) {
     ctx.save();
-    
+
     // 设置合成模式，确保指示器始终可见
-    ctx.globalCompositeOperation = 'source-over';
-    
+    ctx.globalCompositeOperation = "source-over";
+
     // 绘制白色填充
     ctx.beginPath();
     ctx.arc(x, y, size / 2, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';  // 半透明白色填充
+    ctx.fillStyle = "rgba(255, 255, 255, 0.5)"; // 半透明白色填充
     ctx.fill();
-    
+
     // 绘制边框
     ctx.beginPath();
     ctx.arc(x, y, size / 2, 0, Math.PI * 2);
-    ctx.strokeStyle = '#666';  // 灰色边框
-    ctx.lineWidth = 2;         // 边框宽度
+    ctx.strokeStyle = "#666"; // 灰色边框
+    ctx.lineWidth = 2; // 边框宽度
     ctx.stroke();
-    
+
     // 绘制内圈（可选，增加视觉效果）
     ctx.beginPath();
     ctx.arc(x, y, size / 2 - 4, 0, Math.PI * 2);
-    ctx.strokeStyle = '#999';  // 浅灰色内圈
-    ctx.lineWidth = 1;         // 内圈宽度
+    ctx.strokeStyle = "#999"; // 浅灰色内圈
+    ctx.lineWidth = 1; // 内圈宽度
     ctx.stroke();
-    
+
     ctx.restore();
   }
 
-   private draw(e: MouseEvent) {
+  private draw(e: MouseEvent) {
     if (!this.isDrawing || !this.ctx || !this.currentStep) return;
 
     const point = this.getCanvasPoint(e);
@@ -322,34 +361,38 @@ export default class WhiteBoard extends Vue {
     }
 
     // 如果是橡皮擦工具，绘制指示器
-    if (this.currentTool === 'eraser') {
+    if (this.currentTool === "eraser") {
       // 保存当前的canvas状态
       this.ctx.save();
-      
+
       // 清除指示器区域
-      this.ctx.globalCompositeOperation = 'source-over';
+      this.ctx.globalCompositeOperation = "source-over";
       const indicatorSize = this.eraserSize + 4; // 比橡皮擦尺寸稍大一些
       this.ctx.clearRect(
-        point.x - indicatorSize/2,
-        point.y - indicatorSize/2,
+        point.x - indicatorSize / 2,
+        point.y - indicatorSize / 2,
         indicatorSize,
         indicatorSize
       );
-      
+
       // 绘制指示器
       this.drawEraserIndicator(this.ctx, point.x, point.y, this.eraserSize);
-      
+
       // 恢复canvas状态
       this.ctx.restore();
     }
 
     // 如果正在录制，同步更新录制画布
     if (this.isRecording && this.recordingCanvas && this.recordingCtx) {
-      this.recordingCtx.clearRect(0, 0, this.recordingCanvas.width, this.recordingCanvas.height);
+      this.recordingCtx.clearRect(
+        0,
+        0,
+        this.recordingCanvas.width,
+        this.recordingCanvas.height
+      );
       this.recordingCtx.drawImage(this.canvas!, 0, 0);
     }
   }
-
 
   private getCanvasPoint(e: MouseEvent) {
     const rect = this.canvas!.getBoundingClientRect();
@@ -390,11 +433,17 @@ export default class WhiteBoard extends Vue {
 
     // 先绘制背景（如果有）
     if (this.backgroundCanvas) {
-      this.ctx.drawImage(this.backgroundCanvas, 0, 0, this.canvas.width, this.canvas.height);
+      this.ctx.drawImage(
+        this.backgroundCanvas,
+        0,
+        0,
+        this.canvas.width,
+        this.canvas.height
+      );
     }
 
     // 重绘历史记录
-    this.drawHistory.forEach(step => {
+    this.drawHistory.forEach((step) => {
       if (step.points.length < 2) return;
 
       this.ctx.beginPath();
@@ -404,62 +453,89 @@ export default class WhiteBoard extends Vue {
         this.ctx.lineTo(step.points[i].x, step.points[i].y);
       }
 
-      if (step.type === 'pen') {
-        this.ctx.strokeStyle = '#000';
+      if (step.type === "pen") {
+        this.ctx.strokeStyle = "#000";
         this.ctx.lineWidth = step.size;
-        this.ctx.lineCap = 'round';
-        this.ctx.lineJoin = 'round';
+        this.ctx.lineCap = "round";
+        this.ctx.lineJoin = "round";
         this.ctx.stroke();
       } else {
-        this.ctx.strokeStyle = '#fff';
+        this.ctx.strokeStyle = "#fff";
         this.ctx.lineWidth = step.size;
-        this.ctx.lineCap = 'round';
-        this.ctx.lineJoin = 'round';
-        this.ctx.globalCompositeOperation = 'destination-out';
+        this.ctx.lineCap = "round";
+        this.ctx.lineJoin = "round";
+        this.ctx.globalCompositeOperation = "destination-out";
         this.ctx.stroke();
-        this.ctx.globalCompositeOperation = 'source-over';
+        this.ctx.globalCompositeOperation = "source-over";
       }
     });
 
     // 如果正在绘制，也绘制当前步骤
     if (this.currentStep && this.currentStep.points.length >= 2) {
       this.ctx.beginPath();
-      this.ctx.moveTo(this.currentStep.points[0].x, this.currentStep.points[0].y);
+      this.ctx.moveTo(
+        this.currentStep.points[0].x,
+        this.currentStep.points[0].y
+      );
 
       for (let i = 1; i < this.currentStep.points.length; i++) {
-        this.ctx.lineTo(this.currentStep.points[i].x, this.currentStep.points[i].y);
+        this.ctx.lineTo(
+          this.currentStep.points[i].x,
+          this.currentStep.points[i].y
+        );
       }
 
-      if (this.currentStep.type === 'pen') {
-        this.ctx.strokeStyle = '#000';
+      if (this.currentStep.type === "pen") {
+        this.ctx.strokeStyle = "#000";
         this.ctx.lineWidth = this.currentStep.size;
-        this.ctx.lineCap = 'round';
-        this.ctx.lineJoin = 'round';
+        this.ctx.lineCap = "round";
+        this.ctx.lineJoin = "round";
         this.ctx.stroke();
       } else {
-        this.ctx.strokeStyle = '#fff';
+        this.ctx.strokeStyle = "#fff";
         this.ctx.lineWidth = this.currentStep.size;
-        this.ctx.lineCap = 'round';
-        this.ctx.lineJoin = 'round';
-        this.ctx.globalCompositeOperation = 'destination-out';
+        this.ctx.lineCap = "round";
+        this.ctx.lineJoin = "round";
+        this.ctx.globalCompositeOperation = "destination-out";
         this.ctx.stroke();
-        this.ctx.globalCompositeOperation = 'source-over';
+        this.ctx.globalCompositeOperation = "source-over";
       }
     }
 
     // 如果当前工具是橡皮擦且鼠标在画布上，绘制指示器
-    if (this.currentTool === 'eraser' && this.isMouseOnCanvas) {
-      this.drawEraserIndicator(this.ctx, this.cursorPosition.x, this.cursorPosition.y, this.eraserSize);
+    if (this.currentTool === "eraser" && this.isMouseOnCanvas) {
+      this.drawEraserIndicator(
+        this.ctx,
+        this.cursorPosition.x,
+        this.cursorPosition.y,
+        this.eraserSize
+      );
     }
 
     // 如果正在录制，同步更新录制画布
     if (this.isRecording && this.recordingCanvas && this.recordingCtx) {
-      this.recordingCtx.clearRect(0, 0, this.recordingCanvas.width, this.recordingCanvas.height);
-      this.recordingCtx.fillStyle = '#fff';
-      this.recordingCtx.fillRect(0, 0, this.recordingCanvas.width, this.recordingCanvas.height);
+      this.recordingCtx.clearRect(
+        0,
+        0,
+        this.recordingCanvas.width,
+        this.recordingCanvas.height
+      );
+      this.recordingCtx.fillStyle = "#fff";
+      this.recordingCtx.fillRect(
+        0,
+        0,
+        this.recordingCanvas.width,
+        this.recordingCanvas.height
+      );
       // 确保背景内容被复制到录制画布
       if (this.backgroundCanvas) {
-        this.recordingCtx.drawImage(this.backgroundCanvas, 0, 0, this.recordingCanvas.width, this.recordingCanvas.height);
+        this.recordingCtx.drawImage(
+          this.backgroundCanvas,
+          0,
+          0,
+          this.recordingCanvas.width,
+          this.recordingCanvas.height
+        );
       }
       this.recordingCtx.drawImage(this.canvas, 0, 0);
     }
@@ -506,57 +582,28 @@ export default class WhiteBoard extends Vue {
 
     try {
       // 创建录制用的canvas
-      this.recordingCanvas = document.createElement('canvas');
+      this.recordingCanvas = document.createElement("canvas");
       this.recordingCanvas.width = this.canvas.width;
       this.recordingCanvas.height = this.canvas.height;
-      this.recordingCtx = this.recordingCanvas.getContext('2d');
+      this.recordingCtx = this.recordingCanvas.getContext("2d");
 
       if (!this.recordingCtx) {
-        throw new Error('无法创建录制上下文');
+        throw new Error("无法创建录制上下文");
       }
 
-      // 绘制初始帧（包含背景）
-      this.recordingCtx.fillStyle = '#fff';
-      this.recordingCtx.fillRect(0, 0, this.recordingCanvas.width, this.recordingCanvas.height);
-      
-      if (this.backgroundCanvas) {
-        this.recordingCtx.drawImage(this.backgroundCanvas, 0, 0, this.recordingCanvas.width, this.recordingCanvas.height);
-      }
-      
-      this.recordingCtx.drawImage(this.canvas, 0, 0);
-
-      // 开始录制帧循环
-      const recordFrame = () => {
-        if (!this.isRecording || !this.recordingCtx || !this.canvas) return;
-
-        // 将主画布内容复制到录制画布
-        this.recordingCtx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-        this.recordingCtx.fillStyle = '#fff'; // 设置白色背景
-        this.recordingCtx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-
-        // 绘制背景
-        if (this.backgroundCanvas) {
-          this.recordingCtx.drawImage(this.backgroundCanvas, 0, 0, this.canvas.width, this.canvas.height);
-        }
-
-        this.recordingCtx.drawImage(this.canvas, 0, 0);
-
-        requestAnimationFrame(recordFrame);
-      };
-
-      // 从录制画布获取媒体流
-      const stream = this.recordingCanvas.captureStream(30); // 30fps
-      
       // 创建 MediaRecorder
+      const stream = this.recordingCanvas.captureStream(30);
       this.mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'video/webm;codecs=vp8'
+        mimeType: "video/webm;codecs=vp8",
       });
 
       this.recordedChunks = [];
       this.recordingTime = 0;
       this.recordingStartTime = Date.now();
+      this.pausedTime = 0;
+      this.isPaused = false;
 
-      // 处理录制的数据
+      // 处理录制数据
       this.mediaRecorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) {
           this.recordedChunks.push(e.data);
@@ -565,76 +612,143 @@ export default class WhiteBoard extends Vue {
 
       // 处理录制停止
       this.mediaRecorder.onstop = () => {
-        this.downloadRecording();
-        this.isRecording = false;
-        this.recordingCanvas = null;
-        this.recordingCtx = null;
-        
-        if (this.recordingTimer) {
-          clearInterval(this.recordingTimer);
-          this.recordingTimer = null;
-        }
+        this.finishRecording();
       };
 
       // 开始录制
-      this.mediaRecorder.start(1000); // 每秒获取一次数据
+      this.mediaRecorder.start(1000);
       this.isRecording = true;
 
-      // 开始帧循环
-      recordFrame();
-
       // 更新录制时间
-      this.recordingTimer = window.setInterval(() => {
-        this.recordingTime = Math.floor((Date.now() - this.recordingStartTime) / 1000);
-      }, 1000);
-
+      this.startRecordingTimer();
     } catch (err) {
-      console.error('录制失败:', err);
-      alert('无法开始录制，请确保浏览器支持画布录制功能。');
-      this.isRecording = false;
-      this.recordingCanvas = null;
-      this.recordingCtx = null;
+      console.error("录制失败:", err);
+      alert("无法开始录制，请确保浏览器支持画布录制功能。");
+    }
+  }
+
+  pauseRecording() {
+    if (this.mediaRecorder && this.mediaRecorder.state === "recording") {
+      this.mediaRecorder.pause();
+      this.isPaused = true;
+      this.pausedTime = Date.now();
+      if (this.recordingTimer) {
+        clearInterval(this.recordingTimer);
+        this.recordingTimer = null;
+      }
+    }
+  }
+
+  resumeRecording() {
+    if (this.mediaRecorder && this.mediaRecorder.state === "paused") {
+      this.mediaRecorder.resume();
+      this.isPaused = false;
+      // 调整开始时间，考虑暂停的时间
+      if (this.pausedTime) {
+        const pauseDuration = Date.now() - this.pausedTime;
+        this.recordingStartTime += pauseDuration;
+      }
+      this.startRecordingTimer();
     }
   }
 
   stopRecording() {
-    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+    if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") {
       this.mediaRecorder.stop();
+    }
+  }
+
+  private startRecordingTimer() {
+    if (this.recordingTimer) {
+      clearInterval(this.recordingTimer);
+    }
+
+    this.recordingTimer = window.setInterval(() => {
+      this.recordingTime = Math.floor(
+        (Date.now() - this.recordingStartTime) / 1000
+      );
+    }, 1000);
+  }
+
+  private async finishRecording() {
+    try {
+      const blob = new Blob(this.recordedChunks, {
+        type: "video/webm",
+      });
+
+      // 创建下载链接
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      document.body.appendChild(a);
+      a.style.display = "none";
+      a.href = url;
+      a.download = `whiteboard-recording-${new Date().toISOString()}.webm`;
+      a.click();
+
+      // 清理资源
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      // 重置状态
+      this.isRecording = false;
+      this.isPaused = false;
+      this.recordingTime = 0;
+      if (this.recordingTimer) {
+        clearInterval(this.recordingTimer);
+        this.recordingTimer = null;
+      }
+      this.recordedChunks = [];
+      this.mediaRecorder = null;
+      this.recordingCanvas = null;
+      this.recordingCtx = null;
+    } catch (error) {
+      console.error("保存录制文件失败:", error);
+      alert("保存录制文件时出现错误。");
     }
   }
 
   private downloadRecording() {
     try {
       const blob = new Blob(this.recordedChunks, {
-        type: 'video/webm'
+        type: "video/webm",
       });
-      
+
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
+      const a = document.createElement("a");
       document.body.appendChild(a);
-      a.style.display = 'none';
+      a.style.display = "none";
       a.href = url;
       a.download = `whiteboard-recording-${new Date().toISOString()}.webm`;
       a.click();
-      
+
       // 清理资源
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
     } catch (error) {
-      console.error('下载录制文件失败:', error);
-      alert('下载录制文件时出现错误。');
+      console.error("下载录制文件失败:", error);
+      alert("下载录制文件时出现错误。");
     }
   }
 }
 </script>
 
 <style scoped>
-.whiteboard-container {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  overflow: hidden;
+.whiteboard-container.recording .canvas-container::after {
+  content: "录制中";
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(255, 0, 0, 0.8);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.whiteboard-container.recording.paused .canvas-container::after {
+  content: "已暂停";
+  background: rgba(102, 102, 102, 0.8);
 }
 
 .canvas-container {
