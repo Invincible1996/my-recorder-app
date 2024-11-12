@@ -20,13 +20,10 @@
 import { Component, Prop, Vue } from "vue-property-decorator";
 
 // import element-ui Dialog
-import { Dialog, Button } from "element-ui";
 import DrawingBoard from "./DrawingBoard.vue";
 
 @Component({
   components: {
-    "el-dialog": Dialog,
-    "el-button": Button,
     DrawingBoard,
   },
 })

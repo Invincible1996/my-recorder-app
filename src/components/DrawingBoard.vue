@@ -1,60 +1,53 @@
 <template>
   <div class="whiteboard-container">
-    <!-- 画布和内容区域 -->
+    <!-- 画布部分保持不变 -->
     <div class="canvas-container" ref="canvasContainer">
-      <!-- HTML内容层 -->
       <div class="content-layer" ref="contentLayer" v-html="initialContent"></div>
-
-      <!-- 画布层 -->
       <canvas ref="canvas" @mousedown="startDrawing" @mousemove="draw" @mouseup="stopDrawing"
         @mouseleave="stopDrawing"></canvas>
     </div>
 
-    <!-- 右侧工具栏 -->
+    <!-- 使用Element UI组件改造工具栏 -->
     <div class="toolbar">
       <div class="tool-section">
         <h3>工具</h3>
-        <button @click="setTool('pen')" :class="{ active: currentTool === 'pen' }">
-          画笔
-        </button>
-        <button @click="setTool('eraser')" :class="{ active: currentTool === 'eraser' }">
-          橡皮擦
-        </button>
+        <el-button-group>
+          <el-button :type="currentTool === 'pen' ? 'primary' : ''" @click="setTool('pen')" icon="el-icon-edit">
+            画笔
+          </el-button>
+          <el-button :type="currentTool === 'eraser' ? 'primary' : ''" @click="setTool('eraser')" icon="el-icon-delete">
+            橡皮擦
+          </el-button>
+        </el-button-group>
       </div>
 
       <div class="tool-section">
         <h3>画笔设置</h3>
         <div class="size-control">
-          <label>画笔大小: </label>
-          <input type="range" v-model.number="penSize" min="1" max="20" />
-          <span class="size-value">{{ penSize }}</span>
+          <span>画笔大小: {{ penSize }}</span>
+          <el-slider v-model="penSize" :min="1" :max="20" :show-tooltip="true"></el-slider>
         </div>
       </div>
 
       <div class="tool-section">
         <h3>画笔颜色</h3>
         <div class="color-picker">
-          <!-- 当前颜色显示和自定义颜色选择器 -->
-          <label class="color-picker-label">
-            <div class="current-color" :style="{ backgroundColor: currentColor }"></div>
-            <input type="color" v-model="currentColor" class="custom-color-input" @change="setColor(currentColor)" />
-          </label>
+          <el-color-picker v-model="currentColor" show-alpha @change="setColor"></el-color-picker>
 
-          <!-- 颜色预设 -->
-          <div class="color-presets">
-            <div v-for="(color, index) in colorPresets" :key="index" class="color-preset"
-              :style="{ backgroundColor: color }" :class="{ active: currentColor === color }" @click="setColor(color)">
-            </div>
-          </div>
+          <!-- 预设颜色列表 -->
+          <!-- <div class="color-presets">
+            <el-button v-for="(color, index) in colorPresets" :key="index" :style="{ backgroundColor: color }"
+              class="color-preset" :class="{ active: currentColor === color }" @click="setColor(color)"
+              size="small"></el-button>
+          </div> -->
         </div>
       </div>
 
       <div class="tool-section">
         <h3>橡皮擦设置</h3>
         <div class="size-control">
-          <label>橡皮擦大小: </label>
-          <input type="range" v-model.number="eraserSize" min="5" max="50" />
-          <span class="size-value">{{ eraserSize }}</span>
+          <span>橡皮擦大小: {{ eraserSize }}</span>
+          <el-slider v-model="eraserSize" :min="5" :max="50" :show-tooltip="true"></el-slider>
         </div>
       </div>
 
@@ -62,34 +55,43 @@
         <h3>录制</h3>
         <div class="recording-controls">
           <!-- 未录制状态 -->
-          <button v-if="!isRecording" @click="startRecording" class="record-btn">
+          <el-button v-if="!isRecording" type="primary" @click="startRecording" icon="el-icon-video-camera">
             开始录制
-          </button>
+          </el-button>
 
           <!-- 录制中状态 -->
           <div v-if="isRecording" class="recording-status">
-            <span class="recording-indicator" :class="{ paused: isPaused }"></span>
-            <span class="recording-label">{{ recordingStatus }}</span>
             <span class="recording-time">{{ formattedRecordingTime }}</span>
             <div class="recording-buttons">
-              <!-- 暂停/继续按钮 -->
-              <button v-if="!isPaused" @click="pauseRecording" class="pause-btn">
-                暂停
-              </button>
-              <button v-else @click="resumeRecording" class="resume-btn">
-                继续
-              </button>
-              <!-- 停止按钮 -->
-              <button @click="stopRecording" class="stop-btn">结束录制</button>
+              <el-button-group>
+                <el-button v-if="!isPaused" @click="pauseRecording" icon="el-icon-video-pause">
+                  暂停
+                </el-button>
+                <el-button v-else @click="resumeRecording" icon="el-icon-video-play">
+                  继续
+                </el-button>
+                <el-button type="danger" @click="stopRecording" icon="el-icon-video-stop">
+                  结束录制
+                </el-button>
+              </el-button-group>
             </div>
           </div>
         </div>
-        <div class="tool-section">
-          <h3>操作</h3>
-          <button @click="undo" :disabled="!canUndo">撤销</button>
-          <button @click="redo" :disabled="!canRedo">重做</button>
-          <button @click="clear">清空</button>
-        </div>
+      </div>
+
+      <div class="tool-section">
+        <h3>操作</h3>
+        <el-button-group>
+          <el-button icon="el-icon-back" @click="undo" :disabled="!canUndo">
+            撤销
+          </el-button>
+          <el-button icon="el-icon-right" @click="redo" :disabled="!canRedo">
+            重做
+          </el-button>
+          <el-button icon="el-icon-delete" @click="clear" type="danger">
+            清空
+          </el-button>
+        </el-button-group>
       </div>
     </div>
   </div>
