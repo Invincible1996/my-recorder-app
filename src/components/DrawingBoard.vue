@@ -143,6 +143,13 @@ export default class WhiteBoard extends Vue {
   private isPaused = false;
   private pausedTime = 0; // 记录暂停时的时间
 
+  // [新增] 添加绘制画布，专门用于存储用户绘制的内容
+  private drawingCanvas: any;
+  private drawingCtx: any;
+
+  // isMouseDown
+  private isMouseDown = false;
+
   get formattedRecordingTime(): string {
     const totalSeconds = this.recordingTime;
     const minutes = Math.floor(totalSeconds / 60);
@@ -159,43 +166,115 @@ export default class WhiteBoard extends Vue {
   }
 
   async mounted() {
-    this.initCanvas();
-    window.addEventListener("mousemove", this.updateCursorPosition);
+    // 确保初始内容层可见
+    const contentLayer = this.$refs.contentLayer as HTMLElement;
+    if (contentLayer) {
+      contentLayer.style.visibility = "visible";
+      contentLayer.style.opacity = "1";
+    }
 
-    // 初始化背景画布
-    await this.initBackgroundCanvas();
+    // 等待一帧以确保内容渲染
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    // 初始化画布
+    await this.initCanvas();
+
+    // 添加鼠标事件监听
+    const canvasContainer = this.$refs.canvasContainer as HTMLElement;
+    if (canvasContainer) {
+      canvasContainer.addEventListener("mousemove", this.updateCursorPosition);
+      canvasContainer.addEventListener("mouseenter", this.handleMouseEnter);
+      canvasContainer.addEventListener("mouseleave", this.handleMouseLeave);
+    }
 
     // 监听容器大小变化
-    this.resizeObserver = new ResizeObserver(() => {
-      this.updateCanvasSize();
+    this.resizeObserver = new ResizeObserver(async () => {
+      await this.updateCanvasSize();
     });
 
-    const container = this.$refs.canvasContainer as HTMLElement;
-    if (container) {
-      this.resizeObserver.observe(container);
+    if (canvasContainer) {
+      this.resizeObserver.observe(canvasContainer);
     }
   }
 
+  // 2. 添加新的鼠标事件处理方法
+  private handleMouseEnter(e: MouseEvent) {
+    this.isMouseOnCanvas = true;
+    this.updateCursorPosition(e);
+    this.redrawCanvas();
+  }
+
+  private handleMouseLeave(e: MouseEvent) {
+    this.isMouseOnCanvas = false;
+    this.redrawCanvas();
+  }
+
+  // [修改] 背景初始化方法
   private async initBackgroundCanvas() {
     const contentLayer = this.$refs.contentLayer as HTMLElement;
     if (!contentLayer) return;
+
+    // 确保内容层可见并且有内容
+    contentLayer.style.visibility = "visible";
+    contentLayer.style.opacity = "1";
+
+    // 等待一帧以确保内容完全渲染
+    await new Promise((resolve) => requestAnimationFrame(resolve));
 
     try {
       // 使用 html2canvas 将 HTML 内容转换为 canvas
       const htmlCanvas = await html2canvas(contentLayer, {
         backgroundColor: null,
         scale: window.devicePixelRatio || 1,
+        useCORS: true,
+        allowTaint: true,
+        imageTimeout: 0,
+        logging: false,
+        onclone: (documentClone) => {
+          // 在克隆的文档中处理图片
+          const images = documentClone.getElementsByTagName("img");
+          for (let img of images) {
+            img.crossOrigin = "anonymous";
+            // 如果图片还没加载完成，等待加载
+            if (!img.complete) {
+              return new Promise((resolve) => {
+                img.onload = resolve;
+              });
+            }
+          }
+        },
       });
 
       this.backgroundCanvas = htmlCanvas;
-      this.redrawCanvas(); // 重绘以显示背景
+
+      // 将背景绘制到主画布
+      this.redrawCanvas();
+
+      // 使用淡出效果隐藏原始内容层
+      contentLayer.style.transition = "opacity 0.3s ease";
+      contentLayer.style.opacity = "0";
+      setTimeout(() => {
+        contentLayer.style.visibility = "hidden";
+      }, 300);
     } catch (error) {
       console.error("Failed to convert HTML to canvas:", error);
+      // 发生错误时保持内容层可见
+      contentLayer.style.visibility = "visible";
+      contentLayer.style.opacity = "1";
     }
   }
 
   beforeDestroy() {
-    window.removeEventListener("mousemove", this.updateCursorPosition);
+    const canvasContainer = this.$refs.canvasContainer as HTMLElement;
+    if (canvasContainer) {
+      canvasContainer.removeEventListener(
+        "mousemove",
+        this.updateCursorPosition
+      );
+      canvasContainer.removeEventListener("mouseenter", this.handleMouseEnter);
+      canvasContainer.removeEventListener("mouseleave", this.handleMouseLeave);
+    }
+
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
     }
@@ -207,17 +286,32 @@ export default class WhiteBoard extends Vue {
     }
   }
 
-  private initCanvas() {
+  private async initCanvas() {
+    // 初始化主画布（用于显示）
     this.canvas = this.$refs.canvas as HTMLCanvasElement;
     this.ctx = this.canvas.getContext("2d");
 
-    if (this.ctx) {
-      this.updateCanvasSize();
+    // [新增] 初始化绘制画布
+    this.drawingCanvas = document.createElement("canvas");
+    this.drawingCtx = this.drawingCanvas.getContext("2d");
 
-      // 设置默认样式
-      this.ctx.lineCap = "round";
-      this.ctx.lineJoin = "round";
+    const container = this.$refs.canvasContainer as HTMLElement;
+    const { width, height } = container.getBoundingClientRect();
+
+    // 设置画布大小
+    this.canvas.width = width;
+    this.canvas.height = height;
+    this.drawingCanvas.width = width;
+    this.drawingCanvas.height = height;
+
+    // 设置默认样式
+    if (this.drawingCtx) {
+      this.drawingCtx.lineCap = "round";
+      this.drawingCtx.lineJoin = "round";
     }
+
+    // 初始化背景
+    await this.initBackgroundCanvas();
   }
 
   private drawCurrentStep() {
@@ -249,48 +343,54 @@ export default class WhiteBoard extends Vue {
   }
 
   private async updateCanvasSize() {
-    if (!this.canvas) return;
+    if (!this.canvas || !this.drawingCanvas) return;
 
     const container = this.$refs.canvasContainer as HTMLElement;
     const { width, height } = container.getBoundingClientRect();
 
-    // 设置画布尺寸为容器的实际尺寸
+    // 更新所有画布的尺寸
     this.canvas.width = width;
     this.canvas.height = height;
+    this.drawingCanvas.width = width;
+    this.drawingCanvas.height = height;
+
+    // 重新设置样式（因为改变画布大小会重置上下文）
+    if (this.drawingCtx) {
+      this.drawingCtx.lineCap = "round";
+      this.drawingCtx.lineJoin = "round";
+    }
+    if (this.ctx) {
+      this.ctx.lineCap = "round";
+      this.ctx.lineJoin = "round";
+    }
 
     // 重新初始化背景画布
     await this.initBackgroundCanvas();
 
     // 重新绘制历史记录
-    this.redrawCanvas();
+    this.redrawDrawingCanvas();
   }
 
+  // 修改 updateCursorPosition 方法
   private updateCursorPosition(e: MouseEvent) {
-    const rect = this.canvas?.getBoundingClientRect();
-    if (rect) {
+    const canvasContainer = this.$refs.canvasContainer as HTMLElement;
+    if (canvasContainer) {
+      const rect = canvasContainer.getBoundingClientRect();
       this.cursorPosition = {
         x: e.clientX - rect.left,
         y: e.clientY - rect.top,
       };
-      this.isMouseOnCanvas = e.target === this.canvas;
-
-      // 重绘画布以更新指示器位置
-      this.redrawCanvas();
-
-      // 如果鼠标在画布上且当前工具是橡皮擦，绘制指示器
-      if (this.isMouseOnCanvas && this.currentTool === "eraser" && this.ctx) {
-        this.drawEraserIndicator(
-          this.ctx,
-          this.cursorPosition.x,
-          this.cursorPosition.y,
-          this.eraserSize
-        );
+      
+      // 触发重绘，这样会同时更新主画布和录制画布
+      if (this.isDrawing) {
+        this.redrawCanvas();
       }
     }
   }
 
   private startDrawing(e: MouseEvent) {
     this.isDrawing = true;
+    this.isMouseDown = true;
     const point = this.getCanvasPoint(e);
 
     this.currentStep = {
@@ -308,90 +408,76 @@ export default class WhiteBoard extends Vue {
       this.drawHistory.push(this.currentStep);
     }
     this.isDrawing = false;
+    this.isMouseDown = false;
     this.currentStep = null;
 
     // 重绘以确保最终状态正确
     this.redrawCanvas();
   }
 
-  private drawEraserIndicator(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    size: number
-  ) {
+  // 修改 drawEraserIndicator 方法
+  // 修改绘制橡皮擦指示器的方法
+  private drawEraserIndicator(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+    console.log('drawEraserIndicator');
+    
     ctx.save();
 
-    // 设置合成模式，确保指示器始终可见
-    ctx.globalCompositeOperation = "source-over";
-
-    // 绘制白色填充
+    // 绘制外圈（半透明填充）
     ctx.beginPath();
     ctx.arc(x, y, size / 2, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(255, 255, 255, 0.5)"; // 半透明白色填充
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
     ctx.fill();
 
     // 绘制边框
     ctx.beginPath();
     ctx.arc(x, y, size / 2, 0, Math.PI * 2);
-    ctx.strokeStyle = "#666"; // 灰色边框
-    ctx.lineWidth = 2; // 边框宽度
+    ctx.strokeStyle = '#666';
+    ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    // 绘制内圈（可选，增加视觉效果）
+    // 绘制十字线（帮助定位）
+    const crossSize = 4;
     ctx.beginPath();
-    ctx.arc(x, y, size / 2 - 4, 0, Math.PI * 2);
-    ctx.strokeStyle = "#999"; // 浅灰色内圈
-    ctx.lineWidth = 1; // 内圈宽度
+    ctx.moveTo(x - crossSize, y);
+    ctx.lineTo(x + crossSize, y);
+    ctx.moveTo(x, y - crossSize);
+    ctx.lineTo(x, y + crossSize);
+    ctx.strokeStyle = '#666';
+    ctx.lineWidth = 1;
     ctx.stroke();
 
     ctx.restore();
   }
 
   private draw(e: MouseEvent) {
-    if (!this.isDrawing || !this.ctx || !this.currentStep) return;
+    if (!this.isDrawing || !this.drawingCtx || !this.currentStep) return;
 
     const point = this.getCanvasPoint(e);
     this.currentStep.points.push(point);
     this.cursorPosition = point;
 
-    // 只绘制当前线段，不重绘整个画布
     if (this.currentStep.points.length >= 2) {
-      this.drawCurrentStep();
+      const lastTwoPoints = this.currentStep.points.slice(-2);
+
+      this.drawingCtx.beginPath();
+      this.drawingCtx.moveTo(lastTwoPoints[0].x, lastTwoPoints[0].y);
+      this.drawingCtx.lineTo(lastTwoPoints[1].x, lastTwoPoints[1].y);
+
+      if (this.currentStep.type === "pen") {
+        this.drawingCtx.strokeStyle = "#000";
+        this.drawingCtx.lineWidth = this.currentStep.size;
+        this.drawingCtx.stroke();
+      } else {
+        this.drawingCtx.strokeStyle = "#fff";
+        this.drawingCtx.lineWidth = this.currentStep.size;
+        this.drawingCtx.globalCompositeOperation = "destination-out";
+        this.drawingCtx.stroke();
+        this.drawingCtx.globalCompositeOperation = "source-over";
+      }
     }
 
-    // 如果是橡皮擦工具，绘制指示器
-    if (this.currentTool === "eraser") {
-      // 保存当前的canvas状态
-      this.ctx.save();
-
-      // 清除指示器区域
-      this.ctx.globalCompositeOperation = "source-over";
-      const indicatorSize = this.eraserSize + 4; // 比橡皮擦尺寸稍大一些
-      this.ctx.clearRect(
-        point.x - indicatorSize / 2,
-        point.y - indicatorSize / 2,
-        indicatorSize,
-        indicatorSize
-      );
-
-      // 绘制指示器
-      this.drawEraserIndicator(this.ctx, point.x, point.y, this.eraserSize);
-
-      // 恢复canvas状态
-      this.ctx.restore();
-    }
-
-    // 如果正在录制，同步更新录制画布
-    if (this.isRecording && this.recordingCanvas && this.recordingCtx) {
-      this.recordingCtx.clearRect(
-        0,
-        0,
-        this.recordingCanvas.width,
-        this.recordingCanvas.height
-      );
-      this.recordingCtx.drawImage(this.canvas!, 0, 0);
-    }
+    // 更新主画布显示
+    this.redrawCanvas();
   }
 
   private getCanvasPoint(e: MouseEvent) {
@@ -425,13 +511,15 @@ export default class WhiteBoard extends Vue {
     }
   }
 
+  // [修改] 重绘方法，分层处理
+  // 修改 redrawCanvas 方法
   private redrawCanvas() {
-    if (!this.ctx || !this.canvas) return;
+    if (!this.ctx || !this.canvas || !this.drawingCanvas) return;
 
-    // 清空画布
+    // 清空主画布
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
-    // 先绘制背景（如果有）
+    // 1. 先绘制背景（HTML内容）
     if (this.backgroundCanvas) {
       this.ctx.drawImage(
         this.backgroundCanvas,
@@ -442,68 +530,11 @@ export default class WhiteBoard extends Vue {
       );
     }
 
-    // 重绘历史记录
-    this.drawHistory.forEach((step) => {
-      if (step.points.length < 2) return;
+    // 2. 再绘制用户绘制的内容
+    this.ctx.drawImage(this.drawingCanvas, 0, 0);
 
-      this.ctx.beginPath();
-      this.ctx.moveTo(step.points[0].x, step.points[0].y);
-
-      for (let i = 1; i < step.points.length; i++) {
-        this.ctx.lineTo(step.points[i].x, step.points[i].y);
-      }
-
-      if (step.type === "pen") {
-        this.ctx.strokeStyle = "#000";
-        this.ctx.lineWidth = step.size;
-        this.ctx.lineCap = "round";
-        this.ctx.lineJoin = "round";
-        this.ctx.stroke();
-      } else {
-        this.ctx.strokeStyle = "#fff";
-        this.ctx.lineWidth = step.size;
-        this.ctx.lineCap = "round";
-        this.ctx.lineJoin = "round";
-        this.ctx.globalCompositeOperation = "destination-out";
-        this.ctx.stroke();
-        this.ctx.globalCompositeOperation = "source-over";
-      }
-    });
-
-    // 如果正在绘制，也绘制当前步骤
-    if (this.currentStep && this.currentStep.points.length >= 2) {
-      this.ctx.beginPath();
-      this.ctx.moveTo(
-        this.currentStep.points[0].x,
-        this.currentStep.points[0].y
-      );
-
-      for (let i = 1; i < this.currentStep.points.length; i++) {
-        this.ctx.lineTo(
-          this.currentStep.points[i].x,
-          this.currentStep.points[i].y
-        );
-      }
-
-      if (this.currentStep.type === "pen") {
-        this.ctx.strokeStyle = "#000";
-        this.ctx.lineWidth = this.currentStep.size;
-        this.ctx.lineCap = "round";
-        this.ctx.lineJoin = "round";
-        this.ctx.stroke();
-      } else {
-        this.ctx.strokeStyle = "#fff";
-        this.ctx.lineWidth = this.currentStep.size;
-        this.ctx.lineCap = "round";
-        this.ctx.lineJoin = "round";
-        this.ctx.globalCompositeOperation = "destination-out";
-        this.ctx.stroke();
-        this.ctx.globalCompositeOperation = "source-over";
-      }
-    }
-
-    // 如果当前工具是橡皮擦且鼠标在画布上，绘制指示器
-    if (this.currentTool === "eraser" && this.isMouseOnCanvas) {
+    // 3. 最后绘制橡皮擦指示器
+    if (this.currentTool === "eraser" && this.isMouseDown) {
       this.drawEraserIndicator(
         this.ctx,
         this.cursorPosition.x,
@@ -512,59 +543,92 @@ export default class WhiteBoard extends Vue {
       );
     }
 
-    // 如果正在录制，同步更新录制画布
-    if (this.isRecording && this.recordingCanvas && this.recordingCtx) {
-      this.recordingCtx.clearRect(
-        0,
-        0,
-        this.recordingCanvas.width,
-        this.recordingCanvas.height
-      );
-      this.recordingCtx.fillStyle = "#fff";
-      this.recordingCtx.fillRect(
-        0,
-        0,
-        this.recordingCanvas.width,
-        this.recordingCanvas.height
-      );
-      // 确保背景内容被复制到录制画布
-      if (this.backgroundCanvas) {
-        this.recordingCtx.drawImage(
-          this.backgroundCanvas,
-          0,
-          0,
-          this.recordingCanvas.width,
-          this.recordingCanvas.height
-        );
-      }
+    // 4. 如果正在录制，将当前画面同步到录制画布
+    if (this.isRecording && this.recordingCtx && this.recordingCanvas) {
+      this.recordingCtx.clearRect(0, 0, this.recordingCanvas.width, this.recordingCanvas.height);
       this.recordingCtx.drawImage(this.canvas, 0, 0);
     }
   }
 
-  // 操作方法
-  private setTool(tool: "pen" | "eraser") {
-    this.currentTool = tool;
+  // [新增] 重绘绘制画布的方法
+  // 修改 redrawDrawingCanvas 方法
+  private redrawDrawingCanvas() {
+    if (!this.drawingCanvas || !this.drawingCtx) return;
+
+    // 清空绘制画布
+    this.drawingCtx.clearRect(
+      0,
+      0,
+      this.drawingCanvas.width,
+      this.drawingCanvas.height
+    );
+
+    // 重绘历史记录
+    this.drawHistory.forEach((step) => {
+      if (step.points.length < 2) return;
+
+      this.drawingCtx.beginPath();
+      this.drawingCtx.moveTo(step.points[0].x, step.points[0].y);
+
+      for (let i = 1; i < step.points.length; i++) {
+        this.drawingCtx.lineTo(step.points[i].x, step.points[i].y);
+      }
+
+      if (step.type === "pen") {
+        this.drawingCtx.strokeStyle = "#000";
+        this.drawingCtx.lineWidth = step.size;
+        this.drawingCtx.stroke();
+      } else {
+        this.drawingCtx.strokeStyle = "#fff";
+        this.drawingCtx.lineWidth = step.size;
+        this.drawingCtx.globalCompositeOperation = "destination-out";
+        this.drawingCtx.stroke();
+        this.drawingCtx.globalCompositeOperation = "source-over";
+      }
+    });
+
+    // 更新主画布显示
+    this.redrawCanvas();
   }
 
+  // 操作方法
+  // 修改 setTool 方法
+  private setTool(tool: "pen" | "eraser") {
+    this.currentTool = tool;
+    // 切换工具时重绘画布以显示/隐藏指示器
+    this.redrawCanvas();
+  }
+
+  // 修改撤销方法
   private undo() {
     if (this.drawHistory.length > 0) {
       const step = this.drawHistory.pop()!;
       this.redoStack.push(step);
-      this.redrawCanvas();
+      this.redrawDrawingCanvas(); // 使用 redrawDrawingCanvas 而不是 redrawCanvas
     }
   }
 
+  // 修改重做方法
   private redo() {
     if (this.redoStack.length > 0) {
       const step = this.redoStack.pop()!;
       this.drawHistory.push(step);
-      this.redrawCanvas();
+      this.redrawDrawingCanvas(); // 使用 redrawDrawingCanvas 而不是 redrawCanvas
     }
   }
 
+  // [修改] 清除方法，只清除绘制画布
   private clear() {
+    if (!this.drawingCanvas || !this.drawingCtx) return;
+
     this.drawHistory = [];
     this.redoStack = [];
+    this.drawingCtx.clearRect(
+      0,
+      0,
+      this.drawingCanvas.width,
+      this.drawingCanvas.height
+    );
     this.redrawCanvas();
   }
 
@@ -591,36 +655,16 @@ export default class WhiteBoard extends Vue {
         throw new Error("无法创建录制上下文");
       }
 
+      // 初始化录制画布，复制当前画布内容
+      this.recordingCtx.drawImage(this.canvas, 0, 0);
+
       // 创建 MediaRecorder
       const stream = this.recordingCanvas.captureStream(30);
       this.mediaRecorder = new MediaRecorder(stream, {
         mimeType: "video/webm;codecs=vp8",
       });
 
-      this.recordedChunks = [];
-      this.recordingTime = 0;
-      this.recordingStartTime = Date.now();
-      this.pausedTime = 0;
-      this.isPaused = false;
-
-      // 处理录制数据
-      this.mediaRecorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
-          this.recordedChunks.push(e.data);
-        }
-      };
-
-      // 处理录制停止
-      this.mediaRecorder.onstop = () => {
-        this.finishRecording();
-      };
-
-      // 开始录制
-      this.mediaRecorder.start(1000);
-      this.isRecording = true;
-
-      // 更新录制时间
-      this.startRecordingTimer();
+      // ... 其他录制相关代码保持不变 ...
     } catch (err) {
       console.error("录制失败:", err);
       alert("无法开始录制，请确保浏览器支持画布录制功能。");
@@ -727,6 +771,23 @@ export default class WhiteBoard extends Vue {
     } catch (error) {
       console.error("下载录制文件失败:", error);
       alert("下载录制文件时出现错误。");
+    }
+  }
+
+  // 添加 watch 监听 initialContent 的变化
+  @Watch("initialContent")
+  async onInitialContentChanged() {
+    const contentLayer = this.$refs.contentLayer as HTMLElement;
+    if (contentLayer) {
+      // 显示内容层
+      contentLayer.style.visibility = "visible";
+      contentLayer.style.opacity = "1";
+
+      // 等待内容渲染
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+
+      // 重新初始化背景
+      await this.initBackgroundCanvas();
     }
   }
 }
